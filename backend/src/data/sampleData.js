@@ -39,10 +39,146 @@ function getRandomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Fetch data from Fake Store API and convert to shipments
+// Fetch data from Fake Store API (or local/dummy products) and convert to shipments
 export async function loadShipmentsFromAPI() {
+  console.log("📦 Loading product data for shipments...");
+
+  // Decide whether to use external API. Default: use external only for non-production.
+  // Override by setting USE_EXTERNAL_PRODUCT_API=true in environment to force external fetch in production.
+  const useExternal =
+    process.env.USE_EXTERNAL_PRODUCT_API === "true" ||
+    process.env.NODE_ENV !== "production";
+
+  // Local dummy products (used in production or if external is disabled)
+  const localProducts = [
+    {
+      title: "Sample Widget",
+      price: 19.99,
+      category: "gadgets",
+      description: "Reliable sample widget for demos.",
+    },
+    {
+      title: "Portable Charger",
+      price: 29.95,
+      category: "electronics",
+      description: "Compact power bank.",
+    },
+    {
+      title: "Wireless Mouse",
+      price: 24.5,
+      category: "electronics",
+      description: "Ergonomic wireless mouse.",
+    },
+    {
+      title: "Travel Backpack",
+      price: 59.99,
+      category: "accessories",
+      description: "Spacious and durable.",
+    },
+    {
+      title: "Noise-Cancelling Headphones",
+      price: 129.0,
+      category: "electronics",
+      description: "Enjoy your music.",
+    },
+    {
+      title: "Coffee Mug",
+      price: 12.5,
+      category: "home",
+      description: "Ceramic mug with logo.",
+    },
+    {
+      title: "Desk Lamp",
+      price: 34.99,
+      category: "home",
+      description: "LED desk lamp.",
+    },
+    {
+      title: "Running Shoes",
+      price: 89.99,
+      category: "apparel",
+      description: "Comfortable running shoes.",
+    },
+    {
+      title: "Bluetooth Speaker",
+      price: 49.99,
+      category: "electronics",
+      description: "Portable speaker.",
+    },
+    {
+      title: "Stainless Steel Water Bottle",
+      price: 22.0,
+      category: "home",
+      description: "Keeps drinks cold.",
+    },
+  ];
+
+  if (!useExternal) {
+    console.log(
+      "ℹ️ External product API disabled in this environment — using built-in sample products"
+    );
+    // Expand local products to reach ~100 items
+    const expandedProducts = [];
+    for (let i = 0; i < 10; i++) {
+      expandedProducts.push(
+        ...localProducts.map((p, idx) => ({
+          ...p,
+          title: `${p.title} (${i * localProducts.length + idx + 1})`,
+        }))
+      );
+    }
+
+    shipments = expandedProducts.map((product, index) => {
+      const origin = getRandomItem(cities);
+      const destination = getRandomItem(cities.filter((c) => c !== origin));
+      const status = getRandomItem(statuses);
+      const shipDate = new Date(
+        Date.now() - getRandomNumber(1, 10) * 24 * 60 * 60 * 1000
+      );
+      const deliveryDate = new Date(
+        shipDate.getTime() + getRandomNumber(3, 7) * 24 * 60 * 60 * 1000
+      );
+
+      return {
+        id: String(index + 1),
+        trackingNumber: `TMS${String(index + 1).padStart(6, "0")}`,
+        itemDescription: product.title,
+        category: product.category,
+        quantity: getRandomNumber(1, 50),
+        weight: (product.price * 0.5).toFixed(1),
+        dimensions: {
+          length: getRandomNumber(20, 60),
+          width: getRandomNumber(20, 50),
+          height: getRandomNumber(10, 40),
+        },
+        origin: origin,
+        destination: destination,
+        carrier: getRandomItem(carriers),
+        status: status,
+        priority: getRandomItem(["Standard", "Express", "Overnight"]),
+        shipDate: shipDate.toISOString(),
+        estimatedDelivery: deliveryDate.toISOString(),
+        actualDelivery:
+          status === "Delivered" ? deliveryDate.toISOString() : null,
+        cost: (product.price * 2.5).toFixed(2),
+        insurance: Math.random() > 0.5,
+        signature: Math.random() > 0.6,
+        customerName: `Customer ${index + 1}`,
+        notes: product.description ? product.description.substring(0, 80) : "",
+        createdAt: shipDate.toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    console.log(
+      `✅ Loaded ${shipments.length} shipments from local sample data`
+    );
+    return shipments;
+  }
+
+  // Otherwise, try the external API with retries and fallback to local products if external fails
   try {
-    console.log("📦 Fetching product data from API...");
+    console.log("📦 Fetching product data from external API...");
 
     const url = "https://fakestoreapi.com/products";
     let products;
@@ -137,37 +273,65 @@ export async function loadShipmentsFromAPI() {
     console.log(`✅ Loaded ${shipments.length} shipments from API`);
     return shipments;
   } catch (error) {
-    console.error("❌ Failed to fetch from API:", error.message);
-    console.log("📦 Using fallback sample data...");
+    console.error("❌ Failed to fetch from external API:", error.message);
+    console.log("📦 Falling back to built-in sample data...");
 
-    // Fallback: Create some sample shipments if API fails
-    shipments = [
-      {
-        id: "1",
-        trackingNumber: "TMS000001",
-        itemDescription: "Electronics Package",
-        category: "electronics",
-        quantity: 5,
-        weight: "10.5",
-        dimensions: { length: 40, width: 30, height: 20 },
-        origin: "New York, USA",
-        destination: "Los Angeles, USA",
-        carrier: "FedEx",
-        status: "In Transit",
-        priority: "Express",
-        shipDate: new Date("2024-12-20").toISOString(),
-        estimatedDelivery: new Date("2024-12-25").toISOString(),
-        actualDelivery: null,
-        cost: "125.00",
-        insurance: true,
-        signature: true,
-        customerName: "Customer 1",
-        notes: "Handle with care",
-        createdAt: new Date("2024-12-20").toISOString(),
+    // Fallback: use localProducts expanded to 100
+    const expandedProducts = [];
+    for (let i = 0; i < 10; i++) {
+      expandedProducts.push(
+        ...localProducts.map((p, idx) => ({
+          ...p,
+          title: `${p.title} (${i * localProducts.length + idx + 1})`,
+        }))
+      );
+    }
+
+    shipments = expandedProducts.map((product, index) => {
+      const origin = getRandomItem(cities);
+      const destination = getRandomItem(cities.filter((c) => c !== origin));
+      const status = getRandomItem(statuses);
+      const shipDate = new Date(
+        Date.now() - getRandomNumber(1, 10) * 24 * 60 * 60 * 1000
+      );
+      const deliveryDate = new Date(
+        shipDate.getTime() + getRandomNumber(3, 7) * 24 * 60 * 60 * 1000
+      );
+
+      return {
+        id: String(index + 1),
+        trackingNumber: `TMS${String(index + 1).padStart(6, "0")}`,
+        itemDescription: product.title,
+        category: product.category,
+        quantity: getRandomNumber(1, 50),
+        weight: (product.price * 0.5).toFixed(1),
+        dimensions: {
+          length: getRandomNumber(20, 60),
+          width: getRandomNumber(20, 50),
+          height: getRandomNumber(10, 40),
+        },
+        origin: origin,
+        destination: destination,
+        carrier: getRandomItem(carriers),
+        status: status,
+        priority: getRandomItem(["Standard", "Express", "Overnight"]),
+        shipDate: shipDate.toISOString(),
+        estimatedDelivery: deliveryDate.toISOString(),
+        actualDelivery:
+          status === "Delivered" ? deliveryDate.toISOString() : null,
+        cost: (product.price * 2.5).toFixed(2),
+        insurance: Math.random() > 0.5,
+        signature: Math.random() > 0.6,
+        customerName: `Customer ${index + 1}`,
+        notes: product.description ? product.description.substring(0, 80) : "",
+        createdAt: shipDate.toISOString(),
         updatedAt: new Date().toISOString(),
-      },
-    ];
+      };
+    });
 
+    console.log(
+      `✅ Loaded ${shipments.length} shipments from local sample data (fallback)`
+    );
     return shipments;
   }
 }
